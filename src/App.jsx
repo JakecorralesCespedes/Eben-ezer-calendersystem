@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import CloudAccess from './CloudAccess.jsx';
 import { useCloudState } from './lib/cloudState.js';
+import { supabase } from './lib/supabaseClient.js';
 import { getCourtDue, getCourtPaid, getPlayerDebtTotal, getPlayerDue, getPlayerPaid, normalizeData } from './lib/appData.js';
 
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -75,22 +76,20 @@ function getInitials(name = '') {
 }
 
 function App() {
-  const { data, setData, session, authLoading, dataLoading, syncStatus, syncError, signIn, signUp, signOut, cloudConfigured: cloudActive } = useCloudState();
+  const { data, setData, session, membership, membershipLoading, membershipError, authLoading, dataLoading, syncStatus, syncError, signIn, signOut, cloudConfigured: cloudActive } = useCloudState();
   const [view, setView] = useState('inicio');
   const [selectedDate, setSelectedDate] = useState(localIso());
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [search, setSearch] = useState('');
+  const [googleCalendar, setGoogleCalendar] = useState({ loading: false, connected: false, email: '', lastSyncedAt: '', error: '' });
+  const googleSyncSignature = useMemo(() => JSON.stringify({ bookings: data.bookings, settings: data.settings }), [data.bookings, data.settings]);
 
   useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast(''), 2800);
     return () => clearTimeout(timer);
   }, [toast]);
-
-  if (cloudActive && authLoading) return <LoadingScreen text="Conectando con la base de datos…" />;
-  if (cloudActive && !session) return <CloudAccess onSignIn={signIn} onSignUp={signUp} />;
-  if (cloudActive && dataLoading) return <LoadingScreen text="Cargando tus reservas…" />;
 
   const today = localIso();
   const bookings = data.bookings.filter((booking) => booking.status !== 'cancelled');
@@ -114,6 +113,64 @@ function App() {
 
   function notify(message) {
     setToast(message);
+  }
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get('google_calendar');
+    if (!result) return;
+    notify(result === 'connected' ? 'Google Calendar quedó conectado.' : result === 'denied' ? 'No se autorizó Google Calendar.' : 'No se pudo conectar Google Calendar. Revisá la configuración e intentá de nuevo.');
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
+  }, []);
+
+  useEffect(() => {
+    if (!cloudActive || !session?.user?.id || !membership?.owner_id || dataLoading) {
+      setGoogleCalendar((current) => current.connected || current.loading ? { loading: false, connected: false, email: '', lastSyncedAt: '', error: '' } : current);
+      return undefined;
+    }
+    let alive = true;
+    setGoogleCalendar((current) => ({ ...current, loading: true, error: '' }));
+    supabase.functions.invoke('google-calendar-sync', { body: { action: 'status' } }).then(({ data: result, error }) => {
+      if (!alive) return;
+      if (error) {
+        setGoogleCalendar({ loading: false, connected: false, email: '', lastSyncedAt: '', error: 'No se pudo consultar la conexión de Google. Revisá que las funciones de Supabase estén desplegadas.' });
+        return;
+      }
+      setGoogleCalendar({ loading: false, connected: Boolean(result?.connected), email: result?.email || '', lastSyncedAt: result?.lastSyncedAt || '', error: '' });
+    });
+    return () => { alive = false; };
+  }, [cloudActive, session?.user?.id, membership?.owner_id, dataLoading]);
+
+  useEffect(() => {
+    if (!cloudActive || !session?.user?.id || !membership?.owner_id || dataLoading || !googleCalendar.connected) return undefined;
+    const timer = setTimeout(async () => {
+      const { error } = await supabase.functions.invoke('google-calendar-sync', {
+        body: { action: 'sync', bookings: data.bookings, settings: data.settings },
+      });
+      if (error) setGoogleCalendar((current) => ({ ...current, error: 'Google Calendar no recibió los últimos cambios. Se intentará sincronizar otra vez al modificar la agenda.' }));
+      else setGoogleCalendar((current) => ({ ...current, lastSyncedAt: new Date().toISOString(), error: '' }));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [cloudActive, session?.user?.id, membership?.owner_id, dataLoading, googleCalendar.connected, googleSyncSignature]);
+
+  async function connectGoogleCalendar() {
+    if (!supabase) return notify('Primero conectá Supabase para guardar la autorización de Google de forma segura.');
+    setGoogleCalendar((current) => ({ ...current, loading: true, error: '' }));
+    const { data: result, error } = await supabase.functions.invoke('google-calendar-start', { body: {} });
+    if (error || !result?.authorizationUrl) {
+      setGoogleCalendar((current) => ({ ...current, loading: false, error: 'No se pudo iniciar la conexión. Verificá las funciones y secretos de Google en Supabase.' }));
+      return;
+    }
+    window.location.assign(result.authorizationUrl);
+  }
+
+  async function disconnectGoogleCalendar() {
+    const { error } = await supabase.functions.invoke('google-calendar-sync', { body: { action: 'disconnect' } });
+    if (error) {
+      setGoogleCalendar((current) => ({ ...current, error: 'No se pudo desconectar Google Calendar.' }));
+      return;
+    }
+    setGoogleCalendar({ loading: false, connected: false, email: '', lastSyncedAt: '', error: '' });
+    notify('Google Calendar desconectado. Los eventos ya creados permanecen en tu calendario.');
   }
 
   function saveBooking(values) {
@@ -172,19 +229,19 @@ function App() {
     notify('Calendario descargado. Podés importarlo en Google, Apple o Outlook.');
   }
 
-  function openGoogleEvent(booking) {
-    const start = `${booking.date.replaceAll('-', '')}T${booking.time.replace(':', '')}00`;
-    const end = `${booking.date.replaceAll('-', '')}T${minutesToTime(timeToMinutes(booking.time) + Number(booking.duration)).replace(':', '')}00`;
-    const params = new URLSearchParams({
-      action: 'TEMPLATE',
-      text: `Fútbol · ${booking.name}`,
-      dates: `${start}/${end}`,
-      details: `Reserva de ${data.settings.businessName}`,
-      location: data.settings.location,
-      ctz: 'America/Costa_Rica',
-    });
-    window.open(`https://calendar.google.com/calendar/render?${params}`, '_blank', 'noopener,noreferrer');
+  async function changePassword(password) {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return 'No se pudo cambiar la contraseña. Volvé a intentarlo.';
+    notify('Contraseña actualizada.');
+    return '';
   }
+
+  if (!cloudActive) return <CloudAccess setupError="Esta versión necesita Supabase configurado para proteger los datos y validar los accesos. Configurá las variables de Supabase en Render y volvé a publicar." />;
+  if (authLoading) return <LoadingScreen text="Conectando con la base de datos…" />;
+  if (!session) return <CloudAccess onSignIn={signIn} />;
+  if (membershipLoading) return <LoadingScreen text="Validando el acceso…" />;
+  if (membershipError) return <AccessDenied message={membershipError === 'ACCOUNT_NOT_AUTHORIZED' ? 'Esta cuenta no está habilitada para usar el programa. Pedile al administrador que te agregue.' : membershipError} onSignOut={signOut} />;
+  if (dataLoading) return <LoadingScreen text="Cargando reservas y pagos…" />;
 
   function changeView(next) {
     setView(next);
@@ -201,6 +258,7 @@ function App() {
     { id: 'pagos', label: 'Pagos y deudas', icon: 'wallet', badge: data.bookings.filter((booking) => booking.status !== 'cancelled' && (getCourtDue(booking) > 0 || getPlayerDebtTotal(booking) > 0)).length },
     { id: 'clientes', label: 'Clientes', icon: 'users' },
     { id: 'ajustes', label: 'Ajustes', icon: 'settings' },
+    ...(membership.role === 'admin' ? [{ id: 'usuarios', label: 'Accesos', icon: 'users' }] : []),
   ];
 
   return (
@@ -219,7 +277,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="field-mini"><div className="field-mini-icon"><Icon name="ball" size={18} /></div><div><b>Cancha sintética</b><span>{data.settings.location}</span></div><i className="online-dot" /></div>
           <button className="side-help" onClick={() => setModal({ type: 'help' })}><span className="help-mark">?</span><span><b>¿Necesitás ayuda?</b><small>Guía rápida del sistema</small></span><Icon name="arrow" size={16} /></button>
-          <div className="profile-mini"><div className="avatar avatar-owner">AD</div><div><b>Administrador</b><span>Acceso completo</span></div><button aria-label="Opciones de cuenta" className="icon-button"><Icon name="dots" size={18} /></button></div>
+          <div className="profile-mini"><div className="avatar avatar-owner">{getInitials(membership.display_name || membership.username)}</div><div><b>{membership.display_name || membership.username}</b><span>{membership.role === 'admin' ? 'Administrador' : 'Personal autorizado'}</span></div></div>
         </div>
       </aside>
 
@@ -231,7 +289,7 @@ function App() {
             <span className="topbar-divider" />
             <div className={`today-pill ${syncStatus === 'error' ? 'sync-error' : ''}`}><span className={`today-dot ${cloudActive ? syncStatus : 'local'}`} />{cloudActive ? ({ synced: 'Guardado en la nube', saving: 'Guardando…', loading: 'Sincronizando…', error: 'Error al guardar', checking: 'Conectando…', 'signed-out': 'Sin sesión' }[syncStatus] || 'Conectado') : 'Solo este dispositivo'}</div>
             {cloudActive && <button className="button button-quiet logout-button" onClick={signOut}>Salir</button>}
-            <div className="avatar avatar-top">AD</div>
+            <div className="avatar avatar-top" title={session.user.email}>{getInitials(membership.display_name || membership.username)}</div>
           </div>
         </header>
         {syncError && <div className="sync-error-banner"><b>Problema de sincronización:</b> {syncError}</div>}
@@ -240,11 +298,12 @@ function App() {
           {view === 'agenda' && <Agenda data={data} selectedDate={selectedDate} onDate={setSelectedDate} onNew={(time) => setModal({ type: 'booking', date: selectedDate, time })} onBooking={(booking) => setModal({ type: 'booking', booking })} onExport={exportCalendar} />}
           {view === 'pagos' && <Payments data={data} search={search} setSearch={setSearch} onPayment={(booking) => setModal({ type: 'payment', booking })} onBooking={(booking) => setModal({ type: 'booking', booking })} />}
           {view === 'clientes' && <Clients clients={clients} search={search} setSearch={setSearch} data={data} />}
-          {view === 'ajustes' && <Settings data={data} setData={setData} notify={notify} onExport={exportCalendar} cloudActive={cloudActive} syncError={syncError} />}
+          {view === 'ajustes' && <Settings data={data} setData={setData} notify={notify} onExport={exportCalendar} cloudActive={cloudActive} syncError={syncError} googleCalendar={googleCalendar} onConnectGoogle={connectGoogleCalendar} onDisconnectGoogle={disconnectGoogleCalendar} membership={membership} accountEmail={session.user.email} onChangePassword={changePassword} />}
+          {view === 'usuarios' && membership.role === 'admin' && <TeamManagement membership={membership} notify={notify} />}
         </div>
       </main>
 
-      {modal?.type === 'booking' && <BookingModal data={data} booking={modal.booking} initialDate={modal.date} initialTime={modal.time} publicMode={modal.publicMode} onClose={() => setModal(null)} onSave={saveBooking} onGoogle={openGoogleEvent} />}
+      {modal?.type === 'booking' && <BookingModal data={data} booking={modal.booking} initialDate={modal.date} initialTime={modal.time} publicMode={modal.publicMode} onClose={() => setModal(null)} onSave={saveBooking} />}
       {modal?.type === 'payment' && <PaymentModal booking={modal.booking} currency={data.settings.currency} onClose={() => setModal(null)} onSave={savePayment} />}
       {modal?.type === 'help' && <HelpModal onClose={() => setModal(null)} />}
       {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15} /></span>{toast}</div>}
@@ -395,7 +454,7 @@ function Clients({ clients, search, setSearch, data }) {
   </>;
 }
 
-function Settings({ data, setData, notify, onExport, cloudActive, syncError }) {
+function Settings({ data, setData, notify, onExport, cloudActive, syncError, googleCalendar, onConnectGoogle, onDisconnectGoogle, membership, accountEmail, onChangePassword }) {
   const [form, setForm] = useState(data.settings);
   useEffect(() => setForm(data.settings), [data.settings]);
   function submit(event) {
@@ -407,11 +466,78 @@ function Settings({ data, setData, notify, onExport, cloudActive, syncError }) {
     <div className="page-heading"><div><div className="eyebrow">CONFIGURACIÓN DEL NEGOCIO</div><h1>Ajustes</h1><p>Actualizá los datos y horarios de tu cancha.</p></div></div>
     <div className="settings-grid"><form className="panel settings-panel" onSubmit={submit}><div className="panel-heading"><div><h2>Datos de la cancha</h2><p>Se muestran en la agenda y en la vista de clientes.</p></div><span className="settings-icon"><Icon name="ball" size={20} /></span></div><div className="form-grid"><label className="field-label-input full">Nombre de la cancha<input value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Ej. Cancha La Estrella" required /></label><label className="field-label-input full">Descripción o ubicación<input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Ej. 200 m norte del parque" /></label><label className="field-label-input">Teléfono de contacto<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="8888-8888" /></label><label className="field-label-input">Moneda<select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}><option value="CRC">Colón costarricense (CRC)</option><option value="USD">Dólar estadounidense (USD)</option></select></label></div>
       <div className="settings-divider" /><div className="settings-subtitle">HORARIO Y PRECIO BASE</div><div className="form-grid"><label className="field-label-input">Abre a las<input type="time" value={form.openTime} onChange={(e) => setForm({ ...form, openTime: e.target.value })} required /><small className="field-help">{formatTime12(form.openTime)}</small></label><label className="field-label-input">Cierra a las<input type="time" value={form.closeTime} onChange={(e) => setForm({ ...form, closeTime: e.target.value })} required /><small className="field-help">{formatTime12(form.closeTime)}</small></label><label className="field-label-input">Precio por hora<input type="number" min="0" step="1" value={form.hourlyRate} onChange={(e) => setForm({ ...form, hourlyRate: e.target.value })} required /></label><label className="field-label-input">Duración sugerida<select value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })}><option value="60">1 hora</option><option value="90">1 hora 30 min</option><option value="120">2 horas</option></select></label></div><div className="settings-actions"><span>{cloudActive ? 'Los cambios se sincronizan entre dispositivos.' : 'Cambios locales hasta conectar la base en la nube.'}</span><button className="button button-primary" type="submit">Guardar cambios</button></div></form>
-      <div className="settings-side"><section className="panel integration-panel"><div className="integration-icon"><Icon name="calendar" size={19} /></div><h3>Google y calendario del teléfono</h3><p>En cada reserva podés abrir Google Calendar con los datos listos. El archivo .ics permite importar el calendario en Apple Calendar y otras apps.</p><button className="button button-secondary full-button" onClick={onExport}><Icon name="download" size={16} /> Descargar .ics</button><div className="integration-note"><span className="info-mark">i</span> La sincronización automática requiere conectar una cuenta de Google; este proyecto no tiene esa autorización todavía.</div></section><section className={`storage-note ${cloudActive ? 'cloud-storage-note' : ''}`}><span className="storage-mark"><Icon name="settings" size={17} /></span><div><b>{cloudActive ? 'Base de datos en la nube conectada' : 'Falta conectar la base en la nube'}</b><p>{cloudActive ? `Iniciá sesión con el mismo correo en cada dispositivo.${syncError ? ` ${syncError}` : ''}` : 'Creá un proyecto Supabase, configurá las claves VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY en .env.local y ejecutá database/schema.sql. Hasta entonces, los cambios quedan solo en este dispositivo.'}</p></div></section></div></div>
+      <div className="settings-side"><AccountAccessPanel membership={membership} accountEmail={accountEmail} onChangePassword={onChangePassword} /><section className="panel integration-panel"><div className="integration-icon"><Icon name="calendar" size={19} /></div><h3>Google Calendar</h3><p>Las reservas se copian a tu calendario principal. Los cambios de hora se actualizan y las reservas canceladas se quitan.</p>{googleCalendar.connected ? <div className="google-connection-state"><span className="online-dot" /><span><b>Conectado</b><small>{googleCalendar.email || 'Cuenta de Google'}{googleCalendar.lastSyncedAt ? ` · Sincronizado ${new Date(googleCalendar.lastSyncedAt).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}</small></span></div> : <div className="integration-note"><span className="info-mark">i</span> {cloudActive ? googleCalendar.loading ? 'Consultando la conexión de Google…' : 'Conectá la cuenta de Google que usa el calendario de la cancha.' : 'Primero conectá Supabase para que la autorización pueda guardarse de forma segura en la nube.'}</div>}{googleCalendar.error && <div className="calendar-connect-error">{googleCalendar.error}</div>}<div className="calendar-connect-actions">{googleCalendar.connected ? membership.role === 'admin' && <button type="button" className="button button-secondary full-button" onClick={onDisconnectGoogle}>Desconectar Google</button> : membership.role === 'admin' && <button type="button" className="button button-primary full-button" onClick={onConnectGoogle} disabled={!cloudActive || googleCalendar.loading}>{googleCalendar.loading ? 'Conectando…' : 'Conectar Google Calendar'}</button>}<button type="button" className="button button-secondary full-button" onClick={onExport}><Icon name="download" size={16} /> Descargar .ics</button></div><div className="integration-note"><span className="info-mark">i</span> Apple Calendar y Outlook pueden importar el archivo .ics descargado.</div></section><section className={`storage-note ${cloudActive ? 'cloud-storage-note' : ''}`}><span className="storage-mark"><Icon name="settings" size={17} /></span><div><b>{cloudActive ? 'Base de datos en la nube conectada' : 'Falta conectar la base en la nube'}</b><p>{`Cuenta activa: ${accountEmail || membership.username}. Los cambios quedan sincronizados para el equipo.${syncError ? ` ${syncError}` : ''}`}</p></div></section></div></div>
   </>;
 }
 
-function BookingModal({ data, booking, initialDate, initialTime, publicMode, onClose, onSave, onGoogle }) {
+function AccountAccessPanel({ membership, accountEmail, onChangePassword }) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function submit(event) {
+    event.preventDefault();
+    if (password.length < 8) return setMessage('Usá al menos 8 caracteres.');
+    if (password !== confirmation) return setMessage('Las contraseñas no coinciden.');
+    setBusy(true);
+    setMessage('');
+    const error = await onChangePassword(password);
+    setMessage(error || 'Contraseña actualizada.');
+    if (!error) { setPassword(''); setConfirmation(''); }
+    setBusy(false);
+  }
+  return <section className="panel account-access-panel"><div className="panel-heading"><div><h2>Mi cuenta</h2><p>Entrás con este usuario o con su correo.</p></div><span className="settings-icon"><Icon name="users" size={19} /></span></div><dl className="account-details"><div><dt>Usuario</dt><dd>{membership.username}</dd></div><div><dt>Correo</dt><dd>{accountEmail || membership.email}</dd></div><div><dt>Permiso</dt><dd>{membership.role === 'admin' ? 'Administrador' : 'Personal autorizado'}</dd></div></dl><form className="password-change-form" onSubmit={submit}><label className="field-label-input">Nueva contraseña<input type="password" autoComplete="new-password" minLength="8" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label className="field-label-input">Repetí la contraseña<input type="password" autoComplete="new-password" minLength="8" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>{message && <small className="password-change-message">{message}</small>}<button type="submit" className="button button-secondary full-button" disabled={busy}>{busy ? 'Guardando…' : 'Cambiar contraseña'}</button></form></section>;
+}
+
+function TeamManagement({ membership, notify }) {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ displayName: '', username: '', email: '', password: '' });
+
+  async function loadMembers() {
+    setLoading(true);
+    const { data: result, error: invokeError } = await supabase.functions.invoke('team-admin', { body: { action: 'list' } });
+    if (invokeError) setError('No se pudo cargar la lista. Revisá que team-admin esté desplegada en Supabase.');
+    else { setMembers(result.members || []); setError(''); }
+    setLoading(false);
+  }
+  useEffect(() => { loadMembers(); }, []);
+
+  async function addMember(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    const { data: result, error: invokeError } = await supabase.functions.invoke('team-admin', {
+      body: { action: 'create', ...form, username: form.username.trim().toLowerCase(), email: form.email.trim().toLowerCase() },
+    });
+    if (invokeError || result?.error) setError(result?.error || 'No se pudo crear la cuenta. Revisá que el usuario y correo no estén registrados.');
+    else {
+      setForm({ displayName: '', username: '', email: '', password: '' });
+      notify('Cuenta creada. Compartí el usuario, correo y contraseña temporal con esa persona.');
+      await loadMembers();
+    }
+    setBusy(false);
+  }
+
+  async function removeMember(member) {
+    if (!window.confirm(`¿Querés quitar el acceso de ${member.display_name || member.username}?`)) return;
+    setBusy(true);
+    const { data: result, error: invokeError } = await supabase.functions.invoke('team-admin', { body: { action: 'remove', userId: member.user_id } });
+    if (invokeError || result?.error) setError(result?.error || 'No se pudo quitar el acceso.');
+    else { notify(`Se quitó el acceso de ${member.display_name || member.username}.`); await loadMembers(); }
+    setBusy(false);
+  }
+
+  return <>
+    <div className="page-heading"><div><div className="eyebrow">CUENTAS AUTORIZADAS</div><h1>Accesos del personal</h1><p>Solo el administrador puede agregar o quitar personas del programa.</p></div></div>
+    <div className="team-management-grid"><form className="panel team-create-panel" onSubmit={addMember}><div className="panel-heading"><div><h2>Agregar persona</h2><p>Creá una cuenta para quien administra reservas o pagos.</p></div><span className="settings-icon"><Icon name="plus" size={19} /></span></div><div className="form-grid"><label className="field-label-input full">Nombre<input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} required autoComplete="name" /></label><label className="field-label-input full">Nombre de usuario<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '') })} minLength="3" maxLength="32" pattern="[a-z0-9._-]{3,32}" required autoCapitalize="none" /><small className="field-help">También podrá entrar con su correo.</small></label><label className="field-label-input full">Correo asociado<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required autoComplete="email" /></label><label className="field-label-input full">Contraseña temporal<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} minLength="8" required autoComplete="new-password" /><small className="field-help">La persona puede cambiarla en Ajustes después de entrar.</small></label></div>{error && <div className="calendar-connect-error">{error}</div>}<button type="submit" className="button button-primary full-button" disabled={busy}>{busy ? 'Guardando…' : 'Crear acceso'}</button><p className="team-password-note">Compartí la contraseña temporal directamente con la persona. No se envía por correo.</p></form>
+      <section className="panel team-list-panel"><div className="panel-heading"><div><h2>Personas con acceso</h2><p>{members.length} cuentas del equipo</p></div><button type="button" className="round-icon-button" aria-label="Actualizar lista" onClick={loadMembers}><Icon name="right" size={16} /></button></div>{loading ? <div className="team-empty">Cargando cuentas…</div> : members.length ? <div className="team-member-list">{members.map((member) => <article className="team-member-row" key={member.user_id}><span className="avatar avatar-client">{getInitials(member.display_name || member.username)}</span><div className="team-member-info"><b>{member.display_name || member.username}</b><span>@{member.username} · {member.email}</span><small>{member.role === 'admin' ? 'Administrador' : 'Personal autorizado'}</small></div>{member.user_id !== membership.user_id && <button type="button" className="team-remove-button" onClick={() => removeMember(member)} disabled={busy}>Quitar acceso</button>}</article>)}</div> : <EmptyState icon="users" title="Todavía no agregás a nadie" text="Las cuentas nuevas aparecerán aquí." />}</section></div>
+  </>;
+}
+
+function BookingModal({ data, booking, initialDate, initialTime, publicMode, onClose, onSave }) {
   const settings = data.settings;
   const [form, setForm] = useState(() => booking ? { ...booking, paid: getCourtPaid(booking), players: booking.players || [] } : {
     id: `booking-${Date.now()}`,
@@ -473,7 +599,7 @@ function BookingModal({ data, booking, initialDate, initialTime, publicMode, onC
       {!publicMode && <label className="field-label-input booking-notes">Notas del partido (opcional)<textarea value={form.notes || ''} onChange={(e) => updateForm({ notes: e.target.value })} rows="2" placeholder="Información útil sobre este partido" /></label>}
       {error && <div className="form-error">{error}</div>}
       {!publicMode && booking && <div className="booking-management"><div><span>Estado</span><select value={form.status} onChange={(e) => updateForm({ status: e.target.value })}><option value="confirmed">Confirmada</option><option value="pending">Pendiente de confirmar</option><option value="completed">Finalizada</option><option value="cancelled">Cancelada</option></select></div><div className="balance-preview"><span>Saldo de cancha</span><b>{money(getCourtDue(booking), settings.currency)}</b></div></div>}
-      <div className="modal-actions">{booking && !publicMode && <button type="button" className="button button-secondary google-event-button" onClick={() => onGoogle(form)}>Google Calendar</button>}<button type="button" className="button button-secondary" onClick={onClose}>Cancelar</button><button type="submit" className="button button-primary">{publicMode ? 'Enviar solicitud' : booking ? 'Guardar cambios' : 'Guardar reserva'}</button></div>
+      <div className="modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Cancelar</button><button type="submit" className="button button-primary">{publicMode ? 'Enviar solicitud' : booking ? 'Guardar cambios' : 'Guardar reserva'}</button></div>
     </form></section></div>;
 }
 
@@ -526,8 +652,12 @@ function LoadingScreen({ text }) {
   return <main className="loading-page"><span className="loading-ball"><Icon name="ball" size={25} /></span><b>Mi Cancha</b><p>{text}</p></main>;
 }
 
+function AccessDenied({ message, onSignOut }) {
+  return <main className="access-page"><section className="access-card"><div className="access-brand"><span className="brand-mark"><Icon name="ball" size={22} /></span><span><b>Mi Cancha</b><small>ACCESO ADMINISTRATIVO</small></span></div><div className="access-heading"><h1>Acceso no habilitado</h1><p>{message}</p></div><button type="button" className="button button-primary access-submit" onClick={onSignOut}>Volver al inicio</button></section></main>;
+}
+
 function HelpModal({ onClose }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal-card help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div className="modal-header"><div><span className="modal-kicker">GUÍA RÁPIDA</span><h2 id="help-title">Lo esencial para empezar</h2></div><button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><Icon name="close" /></button></div><div className="help-steps"><div><span>1</span><p><b>Agendá el partido</b> desde “Nueva reserva”, con el nombre del equipo, teléfono y horario.</p></div><div><span>2</span><p><b>Registrá los pagos</b> al recibirlos. El saldo que falta queda visible en Pagos y deudas.</p></div><div><span>3</span><p><b>Revisá los horarios</b> desde Agenda. Los espacios libres también aparecen en la vista para clientes.</p></div></div><div className="help-local-note">Esta primera versión guarda la información en este navegador. Usá el mismo dispositivo para conservar tus registros.</div><div className="modal-actions"><button className="button button-primary" onClick={onClose}>Entendido</button></div></section></div>;
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal-card help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div className="modal-header"><div><span className="modal-kicker">GUÍA RÁPIDA</span><h2 id="help-title">Lo esencial para empezar</h2></div><button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><Icon name="close" /></button></div><div className="help-steps"><div><span>1</span><p><b>Agendá el partido</b> desde “Nueva reserva”, con el nombre del equipo, teléfono y horario.</p></div><div><span>2</span><p><b>Registrá los pagos</b> al recibirlos. El saldo que falta queda visible en Pagos y deudas.</p></div><div><span>3</span><p><b>Revisá los horarios</b> desde Agenda. Los espacios libres también aparecen en la vista para clientes.</p></div></div><div className="help-local-note">Las reservas y los pagos se guardan en la nube para que el equipo vea la misma información en cada dispositivo.</div><div className="modal-actions"><button className="button button-primary" onClick={onClose}>Entendido</button></div></section></div>;
 }
 
 export default App;

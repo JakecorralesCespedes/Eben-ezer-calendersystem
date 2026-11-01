@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Icon } from './components/Icon.jsx';
 
-export default function CloudAccess({ onSignIn, onSignUp, error: setupError = '' }) {
-  const [mode, setMode] = useState('signin');
-  const [email, setEmail] = useState('');
+export default function CloudAccess({ onSignIn, error: setupError = '' }) {
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState(setupError);
   const [busy, setBusy] = useState(false);
@@ -12,16 +11,14 @@ export default function CloudAccess({ onSignIn, onSignUp, error: setupError = ''
     event.preventDefault();
     setBusy(true);
     setMessage('');
-    if (mode === 'signup') {
-      const result = await onSignUp(email.trim(), password);
-      if (result.error) setMessage('No se pudo crear el acceso. Revisá el correo y la contraseña e intentá de nuevo.');
-      else if (result.needsEmailConfirmation) setMessage('Revisá tu correo y confirmá la cuenta antes de iniciar sesión.');
-    } else {
-      const error = await onSignIn(email.trim(), password);
-      if (error) setMessage('Correo o contraseña incorrectos. Revisalos e intentá de nuevo.');
-    }
+    const error = await onSignIn(identifier.trim(), password);
+    if (error) setMessage(error === 'ACCOUNT_NOT_AUTHORIZED'
+      ? 'Esta cuenta todavía no tiene permiso. Pedile al administrador que habilite el acceso.'
+      : 'Usuario, correo o contraseña incorrectos. Revisalos e intentá de nuevo.');
     setBusy(false);
   }
 
-  return <main className="access-page"><section className="access-card"><div className="access-brand"><span className="brand-mark"><Icon name="ball" size={22} /></span><span><b>Mi Cancha</b><small>AGENDA Y PAGOS</small></span></div><div className="access-heading"><span className="eyebrow">INFORMACIÓN SEGURA Y SINCRONIZADA</span><h1>{mode === 'signup' ? 'Crear acceso del administrador' : 'Iniciar sesión'}</h1><p>Usá el mismo correo y contraseña en cada dispositivo para ver los mismos datos.</p></div><form onSubmit={submit} className="access-form"><label className="field-label-input">Correo electrónico<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field-label-input">Contraseña<input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength="6" required /></label>{message && <div className="access-message">{message}</div>}<button className="button button-primary access-submit" disabled={busy}>{busy ? 'Conectando…' : mode === 'signup' ? 'Crear mi acceso' : 'Entrar a mi cancha'}</button></form><button className="access-toggle" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setMessage(''); }}>{mode === 'signin' ? 'Primera vez: crear cuenta de administrador' : 'Ya tengo acceso: iniciar sesión'}</button><div className="access-footnote">Al conectarte, la agenda queda guardada en la nube y sincronizada entre tus dispositivos.</div></section></main>;
+  if (setupError) return <main className="access-page"><section className="access-card"><div className="access-brand"><span className="brand-mark"><Icon name="ball" size={22} /></span><span><b>Mi Cancha</b><small>AGENDA Y PAGOS</small></span></div><div className="access-heading"><span className="eyebrow">ACCESO ADMINISTRATIVO</span><h1>Falta conectar la nube</h1><p>{setupError}</p></div></section></main>;
+
+  return <main className="access-page"><section className="access-card"><div className="access-brand"><span className="brand-mark"><Icon name="ball" size={22} /></span><span><b>Mi Cancha</b><small>AGENDA Y PAGOS</small></span></div><div className="access-heading"><span className="eyebrow">ACCESO SOLO PARA PERSONAL AUTORIZADO</span><h1>Iniciar sesión</h1><p>Entrá con tu nombre de usuario o con el correo asociado a tu cuenta.</p></div><form onSubmit={submit} className="access-form"><label className="field-label-input">Usuario o correo<input autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} required autoCapitalize="none" /></label><label className="field-label-input">Contraseña<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{message && <div className="access-message">{message}</div>}<button className="button button-primary access-submit" disabled={busy}>{busy ? 'Ingresando…' : 'Entrar'}</button></form><div className="access-footnote">El administrador crea y habilita todas las cuentas. Si no tenés acceso, contactá a la persona encargada.</div></section></main>;
 }
