@@ -1,6 +1,6 @@
 # Agenda Cancha
 
-Primera versión web para administrar una cancha sintética de fútbol. Incluye sincronización en Supabase, autenticación del administrador, deuda individual por jugador y registro de abonos con montos libres.
+App web para administrar una cancha sintética de fútbol. Incluye autenticación, sincronización entre dispositivos mediante Supabase, deuda individual por jugador y registro de pagos con montos exactos.
 
 ## Iniciar
 
@@ -9,18 +9,22 @@ npm install
 npm run dev
 ```
 
-## Conectar la base permanente
+## Base de datos permanente
 
 1. Crear un proyecto en Supabase.
-2. Copiar `.env.example` a `.env.local` y completar `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` desde el panel de Supabase.
-3. Ejecutar el contenido de `database/schema.sql` una vez en el SQL Editor de Supabase.
+2. Ejecutar `database/schema.sql` una vez en el SQL Editor de Supabase.
+3. Para desarrollo local, copiar `.env.example` a `.env.local` y completar `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` desde el panel de Supabase.
 4. Reiniciar `npm run dev`, crear el acceso del administrador y usar el mismo correo y contraseña en cada dispositivo.
 
-En Supabase Auth, agregá el origen de la app en la lista de URL permitidas para que el enlace de confirmación regrese al teléfono o computadora correctos.
+En Supabase Auth, agregá la URL pública de Render a `Site URL` y a las URL de redirección permitidas para que el enlace de confirmación regrese a la app.
 
-La clave `publishable` está hecha para usarse en el cliente con políticas RLS; nunca se debe poner la clave `service_role` en el navegador. Si el proyecto no está configurado, el modo de vista previa indica que los datos permanecen solo en el dispositivo.
+La app usa la clave `publishable` del cliente y políticas RLS. Nunca pongás la clave `service_role` en el navegador. Si la conexión de Supabase aún no está configurada, el modo de vista previa indica que los datos permanecen solo en ese dispositivo.
 
-La dirección local de Vite sirve únicamente dentro de la red Wi‑Fi. Para abrir el sistema desde cualquier lugar, también hay que publicar la app en un servicio de alojamiento web y cargar allí las mismas dos variables de Supabase.
+## Publicar en Render
+
+El archivo `render.yaml` define un Static Site de Render, el comando `npm ci && npm run build`, la carpeta `dist`, una regla de reescritura para la app web y las variables de Supabase. Conectá el repositorio a Render como Blueprint; Render pedirá los valores de `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY`. Vite los incorpora al compilar el sitio, así que guardá las variables en Render antes del despliegue y volvé a desplegar si las cambiás.
+
+Render aloja la interfaz web y Supabase almacena los datos. La URL local de Vite es solo para desarrollo; la URL pública de Render permite abrir la app desde cualquier lugar.
 
 ## Incluye
 
@@ -32,5 +36,5 @@ La dirección local de Vite sirve únicamente dentro de la red Wi‑Fi. Para abr
 - Exportación del calendario a `.ics`, compatible para importar en Google Calendar, Apple Calendar y Outlook.
 - Ajustes iniciales para horario, moneda y precio base.
 
-Los datos se guardan en el almacenamiento local del navegador. Esta versión todavía no sincroniza información entre dispositivos ni conecta cuentas externas de calendario. Los horarios, precios y flujos incluidos son supuestos iniciales y se ajustarán con las respuestas del dueño.
+Los horarios, precios y flujos incluidos son supuestos iniciales y se ajustarán con las respuestas del dueño. La conexión automática con Google Calendar todavía requiere autorización OAuth; por ahora se ofrece un enlace para crear un evento en Google y exportación `.ics` para otras apps de calendario.
 # Eben-ezer-calendersystem
