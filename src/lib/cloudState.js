@@ -4,6 +4,7 @@ import { makeInitialData, normalizeData, readLocalData, STORAGE_KEY } from './ap
 
 export function useCloudState() {
   const [data, setData] = useState(readLocalData);
+  const dataRef = useRef(data);
   const [session, setSession] = useState(null);
   const [membership, setMembership] = useState(null);
   const [authLoading, setAuthLoading] = useState(cloudConfigured);
@@ -12,7 +13,21 @@ export function useCloudState() {
   const [dataLoading, setDataLoading] = useState(cloudConfigured);
   const [syncStatus, setSyncStatus] = useState(cloudConfigured ? 'checking' : 'local');
   const [syncError, setSyncError] = useState('');
+  const [retryVersion, setRetryVersion] = useState(0);
   const skipSaveRef = useRef(false);
+  const dirtyVersionRef = useRef(0);
+  const localDirtyRef = useRef(false);
+
+  function updateData(update) {
+    const next = typeof update === 'function' ? update(dataRef.current) : update;
+    if (next === dataRef.current) return;
+    dataRef.current = next;
+    localDirtyRef.current = true;
+    dirtyVersionRef.current += 1;
+    setData(next);
+  }
+
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* local storage is only a preview cache */ }
@@ -75,9 +90,10 @@ export function useCloudState() {
     setSyncStatus('loading');
     const channel = supabase.channel(`app-state-${ownerId}-${session.user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state', filter: `owner_id=eq.${ownerId}` }, (payload) => {
-        if (!alive || !payload.new?.data) return;
+        if (!alive || !payload.new?.data || localDirtyRef.current) return;
         skipSaveRef.current = true;
         setData(normalizeData(payload.new.data));
+        localDirtyRef.current = false;
         setSyncStatus('synced');
       })
       .subscribe();
@@ -94,6 +110,7 @@ export function useCloudState() {
       if (row?.data) {
         skipSaveRef.current = true;
         setData(normalizeData(row.data));
+        localDirtyRef.current = false;
       } else {
         const initial = normalizeData(readLocalData() || makeInitialData());
         const { error: insertError } = await supabase.from('app_state').upsert({ owner_id: ownerId, data: initial, updated_at: new Date().toISOString() }, { onConflict: 'owner_id' });
@@ -104,6 +121,7 @@ export function useCloudState() {
         } else {
           skipSaveRef.current = true;
           setData(initial);
+          localDirtyRef.current = false;
           setSyncStatus('synced');
         }
       }
@@ -113,13 +131,53 @@ export function useCloudState() {
     return () => { alive = false; supabase.removeChannel(channel); };
   }, [session?.user?.id, membership?.owner_id, membershipLoading, membershipError]);
 
+  // Mobile Safari suspends Realtime while a home-screen web app is in the background.
+  // Refresh on resume and poll while visible so this device catches up with other staff.
+  useEffect(() => {
+    if (!cloudConfigured || !session?.user?.id || !membership?.owner_id || dataLoading) return undefined;
+    let alive = true;
+    let refreshing = false;
+    async function refreshFromCloud() {
+      if (refreshing || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      if (localDirtyRef.current) {
+        setRetryVersion((version) => version + 1);
+        return;
+      }
+      refreshing = true;
+      const { data: row, error } = await supabase.from('app_state').select('data').eq('owner_id', membership.owner_id).maybeSingle();
+      if (alive && !error && row?.data && !localDirtyRef.current) {
+        skipSaveRef.current = true;
+        setData(normalizeData(row.data));
+        setSyncError('');
+        setSyncStatus('synced');
+      }
+      refreshing = false;
+    }
+    const onResume = () => { if (document.visibilityState !== 'hidden') void refreshFromCloud(); };
+    const interval = window.setInterval(() => void refreshFromCloud(), 25000);
+    window.addEventListener('focus', onResume);
+    window.addEventListener('pageshow', onResume);
+    window.addEventListener('online', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onResume);
+      window.removeEventListener('pageshow', onResume);
+      window.removeEventListener('online', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
+  }, [session?.user?.id, membership?.owner_id, dataLoading]);
+
   useEffect(() => {
     if (!cloudConfigured || !session?.user?.id || !membership?.owner_id || dataLoading) return undefined;
     if (skipSaveRef.current) {
       skipSaveRef.current = false;
       return undefined;
     }
+    if (!localDirtyRef.current) return undefined;
     const ownerId = membership.owner_id;
+    const version = dirtyVersionRef.current;
     const timer = setTimeout(async () => {
       setSyncStatus('saving');
       const { error } = await supabase.from('app_state').upsert({ owner_id: ownerId, data, updated_at: new Date().toISOString() }, { onConflict: 'owner_id' });
@@ -129,10 +187,11 @@ export function useCloudState() {
       } else {
         setSyncError('');
         setSyncStatus('synced');
+        if (version === dirtyVersionRef.current) localDirtyRef.current = false;
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [data, session?.user?.id, membership?.owner_id, dataLoading]);
+  }, [data, session?.user?.id, membership?.owner_id, dataLoading, retryVersion]);
 
   async function signIn(identifier, password) {
     if (identifier.includes('@')) {
@@ -153,5 +212,5 @@ export function useCloudState() {
     setSyncStatus('signed-out');
   }
 
-  return { data, setData, session, membership, membershipLoading, membershipError, authLoading, dataLoading, syncStatus, syncError, signIn, signOut, cloudConfigured };
+  return { data, setData: updateData, session, membership, membershipLoading, membershipError, authLoading, dataLoading, syncStatus, syncError, signIn, signOut, cloudConfigured };
 }

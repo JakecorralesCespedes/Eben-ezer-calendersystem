@@ -12,3 +12,6 @@ verify_jwt = false
 
 [functions.team-admin]
 verify_jwt = true
+
+[functions.public-availability]
+verify_jwt = false

@@ -1,7 +1,7 @@
 import { adminClient, appUrl, redirectUri } from '../_shared/google.ts'
 
 function redirectToApp(result: string) {
-  const url = new URL(appUrl())
+  const url = new URL('/admin', appUrl())
   url.searchParams.set('google_calendar', result)
   return Response.redirect(url, 303)
 }

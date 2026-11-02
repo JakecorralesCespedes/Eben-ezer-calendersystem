@@ -38,13 +38,15 @@ Cada persona entra con su usuario o correo y contraseña. El administrador puede
 
 La app usa la clave `publishable` y políticas RLS. Las funciones de administración usan la clave secreta solo del lado del servidor; nunca la pongás en Render como variable `VITE_` ni en el navegador. Si no está configurada la nube, la app bloquea el acceso al área interna.
 
+La página principal (`/`) y `/reservar` muestran la disponibilidad pública sin iniciar sesión. El acceso administrativo está en `/admin`; iniciá sesión una vez en ese enlace y agregá esa página a la pantalla de inicio del iPhone para volver al área interna con la sesión guardada. La sesión se conserva en el dispositivo hasta que se use **Salir** o venza la sesión.
+
 ## Accesos del personal
 
 Después de iniciar sesión como administrador, usá **Accesos → Agregar persona**. Completá el nombre, usuario, correo asociado y una contraseña temporal. La persona podrá ingresar con su usuario o correo, y cambiar la contraseña en Ajustes. **Quitar acceso** elimina su permiso de iniciar sesión y no borra las reservas del equipo.
 
 Al administrador inicial se le asigna el rol una sola vez usando [database/bootstrap_admin.sql](database/bootstrap_admin.sql). Solo su cuenta puede abrir Accesos, crear cuentas de personal o revocar permisos. Las cuentas autorizadas ven la agenda y los pagos del mismo equipo en todos sus dispositivos.
 
-Para habilitar la administración de cuentas, instalá y vinculá la CLI si aún no lo hiciste y desplegá las funciones de acceso:
+Para habilitar la administración de cuentas, solicitudes públicas y su bandeja privada, instalá y vinculá la CLI si aún no lo hiciste y desplegá las funciones:
 
 ```bash
 npm install --save-dev supabase
@@ -52,7 +54,10 @@ npx supabase login
 npx supabase link --project-ref TU_PROJECT_REF
 npx supabase functions deploy team-login
 npx supabase functions deploy team-admin
+npx supabase functions deploy public-availability
 ```
+
+El archivo `database/schema.sql` crea también la bandeja de solicitudes y la operación segura que evita que dos clientes pidan el mismo horario. Ejecutalo en Supabase antes de desplegar `public-availability`.
 
 ## Conectar Google Calendar
 
@@ -71,9 +76,9 @@ Google Calendar se conecta desde **Ajustes → Conectar Google Calendar**. La in
    npx supabase functions deploy
    ```
 
-6. Volvé a Render y desplegá la app. Iniciá sesión y conectá la cuenta de Google del calendario de la cancha desde Ajustes.
+6. Volvé a Render y desplegá la app. Abrí `/admin`, iniciá sesión y conectá la cuenta de Google del calendario de la cancha desde Ajustes.
 
-El primer permiso permite crear, actualizar y eliminar eventos de los calendarios que esa cuenta posee. Las reservas nuevas y editadas se sincronizan; las canceladas se quitan de Google Calendar. Al desconectar, se revoca el permiso y los eventos ya creados se conservan en Google.
+La sincronización funciona en ambos sentidos: la app envía sus reservas y consulta los cambios del calendario cada dos minutos, al recuperar el primer plano y al abrirse. Los eventos nuevos de Google también aparecen en la agenda de la app. La consulta cubre los últimos 90 días y los siguientes 730 días; los eventos cancelados en Google se marcan cancelados en la app. Al desconectar, se revoca el permiso y los eventos ya creados se conservan en Google.
 
 Si la aplicación OAuth externa está en modo **Testing**, Google vence las autorizaciones de prueba a los 7 días para permisos de calendario. Para uso continuo hay que publicarla y, si Google lo solicita por el permiso sensible de calendario, completar su verificación. [Reglas oficiales de pruebas OAuth](https://support.google.com/cloud/answer/15549945?hl=es-419), [permisos de Calendar](https://developers.google.com/workspace/calendar/api/auth).
 
@@ -86,8 +91,12 @@ Render aloja la interfaz web y Supabase almacena los datos. La URL local de Vite
 ## Incluye
 
 - Agenda diaria y semanal de una cancha.
-- Creación y edición de reservas, con detección de traslapes.
+- Creación y edición de reservas, con detección de traslapes, tipo de partido, equipo completo o búsqueda de rival, y teléfono opcional.
+- Reservas fijas semanales con fecha de término opcional; las reglas sin fecha final se extienden un año por adelantado conforme pasa el tiempo.
+- Revisión administrativa de solicitudes de clientes; las solicitudes aceptadas quedan pendientes de confirmación en la agenda.
 - Registro de pagos parciales y saldos pendientes.
+- Registro del jugador que promete pagar, con monto y fecha prometida.
+- Informe de ingresos recibidos y pendientes por persona destinataria según el tipo de partido.
 - Resumen de cobros, clientes y reportes imprimibles.
 - Vista sencilla para que un cliente consulte horarios y solicite una reserva.
 - Exportación del calendario a `.ics`, compatible para importar en Google Calendar, Apple Calendar y Outlook.

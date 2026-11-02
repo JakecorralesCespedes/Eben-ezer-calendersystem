@@ -1,0 +1,136 @@
+/* Larger touch targets and readable type for the phone home-screen app. */
+.settings-explainer{margin:8px 0 0;color:#7d8983;font-size:12px;line-height:1.6}
+.recurrence-box{display:grid;gap:12px;margin-top:16px;padding:14px;border:1px solid #e3ebdc;border-radius:11px;background:#f7faf4}
+.recurrence-box>label,.debt-toggle{display:flex;align-items:flex-start;gap:11px;cursor:pointer}
+.recurrence-box input[type=checkbox],.debt-toggle input[type=checkbox]{width:22px;height:22px;accent-color:#315d40;flex:none;margin:1px 0 0}
+.recurrence-box label span,.debt-toggle span{display:grid;gap:4px}
+.recurrence-box label b,.debt-toggle b{font-size:13px;color:#3b5143;line-height:1.4}
+.recurrence-box label small,.debt-toggle small{font-size:11px;color:#839087;line-height:1.5}
+.recurrence-end{display:grid;gap:9px;padding-left:33px}
+.recurrence-end>small{color:#849087;font-size:11px;line-height:1.5}
+.debt-toggle{grid-column:1/-1;padding:12px;border:1px solid #eee1c9;border-radius:9px;background:#fffaf1}
+.request-list-panel{padding:10px 18px}
+.request-card{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(170px,1fr) auto;gap:18px;align-items:center;padding:17px 4px;border-bottom:1px solid #edf0eb}
+.request-card:last-of-type{border-bottom:0}
+.request-date b,.request-date span,.request-person b,.request-person span,.request-person small{display:block}
+.request-date b,.request-person b{font-size:14px;color:#31483a;text-transform:capitalize}
+.request-date span,.request-person span,.request-person small{font-size:12px;color:#7d8983;margin-top:5px}
+.request-person small{color:#99a39d}
+.request-actions{display:flex;gap:8px;flex-wrap:wrap}
+.request-note{padding:10px 0 2px;border-top:1px solid #edf0eb;color:#7d8983;font-size:11px;line-height:1.5}
+.payee-report{padding:17px 19px;margin:0 0 16px}
+.payee-report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:14px}
+.payee-report-card{display:grid;gap:5px;padding:13px;border:1px solid #e9ede6;border-radius:10px;background:#fafbf9}
+.payee-report-card>span{font-size:13px;font-weight:700;color:#33483c}
+.payee-report-card>small{font-size:11px;color:#87928c;line-height:1.45}
+.payee-report-card>b{font-size:17px;color:#527949}
+.payee-report-card>b em{font-size:11px;font-style:normal;font-weight:500;color:#849087}
+.portal-feedback{margin:10px 0;padding:12px;border-radius:9px;background:#f2f6ed;color:#536a49;font-size:14px;line-height:1.5}
+.portal-feedback.error{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff3ef;color:#9d4c3e}
+.portal-refresh-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;color:#87928c;font-size:11px}
+@media(max-width:900px){.request-card{grid-template-columns:minmax(120px,.65fr) minmax(150px,1fr)}.request-actions{grid-column:1/-1}.payee-report-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){
+  body{min-height:100dvh;font-size:16px;padding-bottom:env(safe-area-inset-bottom)}
+  .app-shell,.main-area,.page-content{width:100%;min-width:0}
+  .sidebar{height:calc(116px + env(safe-area-inset-bottom));padding:4px 6px env(safe-area-inset-bottom);overflow:hidden}
+  .main-nav{display:grid;width:100%;min-width:0;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(2,50px);align-content:center;gap:3px}
+  .nav-link{flex:initial;width:100%;min-width:0;height:48px;font-size:11px;gap:4px;padding:3px 2px}
+  .nav-link>svg{width:21px;height:21px}
+  .nav-link>span{white-space:nowrap}
+  .nav-badge{top:1px;right:6px;min-width:18px;font-size:10px;padding:2px 4px}
+  .main-area{padding-bottom:calc(128px + env(safe-area-inset-bottom))}
+  .page-content{padding:20px 13px calc(26px + env(safe-area-inset-bottom))}
+  .topbar{height:62px;padding:0 13px}
+  .breadcrumb{font-size:13px}
+  .customer-view-button,.logout-button{min-height:44px;font-size:12px;padding:0 10px}
+  .page-heading h1,.dashboard-heading h1{font-size:30px;line-height:1.2}
+  .page-heading p,.panel-heading p{font-size:14px;line-height:1.5}
+  .eyebrow,.page-heading .eyebrow{font-size:11px;letter-spacing:1px}
+  .button{min-height:48px;font-size:14px;padding:0 15px}
+  .dashboard-heading{align-items:flex-start}
+  .dashboard-heading .button{min-height:48px;font-size:13px}
+  .stat-card{min-height:136px;padding:14px}
+  .stat-label{font-size:13px;line-height:1.35}
+  .stat-value{font-size:22px}
+  .stat-note{font-size:11px;white-space:normal;line-height:1.4}
+  .panel-heading h2{font-size:17px}
+  .booking-row{grid-template-columns:50px 12px minmax(0,1fr);min-height:78px;gap:8px}
+  .booking-time b,.booking-name-line>b{font-size:14px}
+  .booking-time span,.booking-meta,.booking-meta span{font-size:12px}
+  .booking-row-action{grid-column:3;justify-content:flex-start;margin:0 0 8px}
+  .mini-pay-button,.paid-check,.status-pill{font-size:11px}
+  .agenda-footer{height:auto;min-height:48px;flex-wrap:wrap;padding:9px 0}
+  .legend-item,.calendar-legend span{font-size:12px}
+  .week-day{min-height:62px}
+  .week-day>span{font-size:11px}
+  .week-day>b{font-size:18px}
+  .selected-day-caption b,.selected-day-caption span{font-size:13px}
+  .schedule-slot{grid-template-columns:68px minmax(0,1fr);min-height:64px}
+  .schedule-hour{font-size:13px}
+  .schedule-booking-text b,.schedule-free>span:first-child,.schedule-add{font-size:13px}
+  .schedule-booking-text small{font-size:11px}
+  .payment-summary-card{min-height:110px;padding:15px}
+  .payment-summary-card>span:first-child{font-size:13px}
+  .payment-summary-card>b{font-size:23px}
+  .payment-summary-card>small{font-size:12px}
+  .table-toolbar{gap:12px;padding:13px}
+  .filter-tabs{max-width:100%;overflow:auto}
+  .filter-tabs button{min-height:44px;padding:8px 11px;font-size:13px;white-space:nowrap}
+  .search-box{height:48px;min-width:0;width:100%}
+  .search-box input{font-size:16px}
+  .table-scroll{max-width:100%;overflow:auto}
+  .table-scroll{overflow:visible}
+  .table-scroll table,.table-scroll tbody,.table-scroll tr,.table-scroll td{display:block;width:100%;min-width:0}
+  .table-scroll thead{display:none}
+  .table-scroll tbody{padding:10px;display:grid;gap:11px}
+  .table-scroll tr{padding:8px 12px;border:1px solid #e8ece5;border-radius:11px;background:#fff;box-shadow:0 4px 12px rgba(26,49,41,.035)}
+  .table-scroll td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid #f0f2ee;text-align:right;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+  .table-scroll td:before{content:attr(data-label);flex:0 0 40%;color:#7c8981;font-size:12px;font-weight:700;text-align:left}
+  .table-scroll td:first-child{display:block;text-align:left}
+  .table-scroll td:first-child:before{display:block;margin:0 0 8px}
+  .table-scroll td:last-child{border-bottom:0}
+  .table-scroll .client-table-cell{max-width:100%}
+  .field-label-input{font-size:13px;gap:7px}
+  .field-label-input input,.field-label-input select,.field-label-input textarea{height:50px;font-size:16px;padding:0 12px}
+  .field-label-input textarea{height:auto;min-height:82px;padding:12px}
+  .booking-modal .field-label-input{font-size:14px}
+  .booking-modal .field-label-input input,.booking-modal .field-label-input select,.booking-modal .field-label-input textarea{height:52px;font-size:16px}
+  .booking-modal .field-label-input textarea{height:auto}
+  .modal-backdrop{padding:8px;place-items:center}
+  .modal-card{width:100%;max-height:calc(100dvh - 16px - env(safe-area-inset-bottom));padding:17px}
+  .modal-header h2{font-size:22px}
+  .modal-kicker{font-size:11px}
+  .modal-actions .button{flex:1;min-height:50px;font-size:14px}
+  .recurrence-box label b,.debt-toggle b{font-size:14px}
+  .recurrence-box label small,.recurrence-end>small,.debt-toggle small{font-size:12px}
+  .request-list-panel{padding:8px 13px}
+  .request-card{grid-template-columns:1fr;gap:10px;padding:15px 2px}
+  .request-date b,.request-person b{font-size:16px}
+  .request-date span,.request-person span,.request-person small{font-size:13px}
+  .request-actions{display:grid;grid-template-columns:1fr 1fr}
+  .request-actions .button{font-size:13px;padding:0 8px}
+  .request-note,.settings-explainer{font-size:13px}
+  .payee-report{padding:15px}
+  .payee-report-grid{grid-template-columns:1fr}
+  .payee-report-card>span{font-size:15px}
+  .payee-report-card>small{font-size:12px}
+  .portal-header{height:auto;min-height:70px;padding:10px 13px;gap:8px}
+  .portal-brand b{font-size:14px}
+  .portal-brand small{font-size:10px}
+  .portal-header>.button{font-size:12px;min-height:44px}
+  .portal-content{padding:22px 13px calc(25px + env(safe-area-inset-bottom));gap:18px}
+  .portal-intro h1{font-size:34px;margin:12px 0 9px}
+  .portal-intro>p,.portal-address{font-size:14px;line-height:1.55}
+  .portal-tag{font-size:11px}
+  .portal-booking-panel{padding:15px 12px}
+  .portal-panel-heading h2{font-size:18px}
+  .portal-controls .field-label-input{font-size:14px}
+  .portal-controls .field-label-input input,.portal-controls .field-label-input select{height:50px;font-size:16px}
+  .portal-slots-heading b,.portal-slots-heading span{font-size:13px}
+  .portal-slots{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .portal-slot{min-height:64px;padding:9px}
+  .portal-slot>span{font-size:14px}
+  .portal-slot small{font-size:11px}
+  .portal-privacy-note,.portal-refresh-row,.portal-footer{font-size:12px;line-height:1.5}
+  .portal-feedback{font-size:14px}
+}

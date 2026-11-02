@@ -153,11 +153,17 @@ function localDateTime(date: string, time: string, duration = 0) {
 
 export function toGoogleEvent(booking: Record<string, unknown>, settings: Record<string, unknown>, eventId: string) {
   const status = booking.status === 'pending' ? 'Solicitud pendiente de confirmar' : booking.status === 'completed' ? 'Finalizada' : 'Confirmada'
+  const categories: Record<string, string> = { hombres: 'Hombres', mujeres: 'Mujeres', mixto: 'Mixto', ninos: 'Niños o niñas', veteranos: 'Veteranos', unclassified: 'Sin clasificar' }
+  const category = String(booking.category || 'unclassified')
+  const payee = category === 'hombres' ? String(settings.maleOwnerName || 'Dueño de la cancha') : String(settings.femaleOwnerName || 'Dueña de la cancha')
   const description = [
     `Cancha: ${String(settings.businessName || 'Cancha sintética')}`,
     `Responsable o equipo: ${String(booking.name || '')}`,
     booking.phone ? `Teléfono: ${String(booking.phone)}` : '',
     `Estado: ${status}`,
+    `Tipo de partido: ${categories[category] || 'Sin clasificar'}`,
+    `Equipos: ${booking.matchup === 'needs_opponent' ? 'Necesita que la cancha consiga un rival' : 'Ya cuenta con ambos equipos'}`,
+    `Destino del ingreso: ${category === 'unclassified' ? 'Sin asignar' : payee}`,
     booking.notes ? `Notas: ${String(booking.notes)}` : '',
     'Evento sincronizado desde Agenda Cancha.',
   ].filter(Boolean).join('\n')
